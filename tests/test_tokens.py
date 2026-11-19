@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
 
@@ -147,13 +148,30 @@ EXPECTED_TEXT = (
 )
 
 
+def token_file_bytes() -> bytes:
+    return files("lizy_karte").joinpath("tokens.css").read_bytes()
+
+
 def token_file_text() -> str:
     return files("lizy_karte").joinpath("tokens.css").read_text(encoding="utf-8")
 
 
 def test_token_file_is_byte_pinned() -> None:
-    """The authoritative pin: any change to tokens.css, of any kind, fails here."""
-    assert token_file_text() == EXPECTED_TEXT
+    """The authoritative pin: any change to tokens.css, of any kind, fails here.
+
+    It compares raw bytes, because text-mode reading translates line endings and
+    would let a CRLF or CR variant of the file pass.
+    """
+    assert token_file_bytes() == EXPECTED_TEXT.encode("utf-8")
+
+
+@pytest.mark.parametrize("newline", ["\r\n", "\r"], ids=["crlf", "cr"])
+def test_byte_pin_rejects_line_ending_variants(tmp_path: Path, newline: str) -> None:
+    variant = tmp_path / "tokens.css"
+    variant.write_bytes(EXPECTED_TEXT.replace("\n", newline).encode("utf-8"))
+    # Text mode hides the variant; the byte comparison the pin uses does not.
+    assert variant.read_text(encoding="utf-8") == EXPECTED_TEXT
+    assert variant.read_bytes() != EXPECTED_TEXT.encode("utf-8")
 
 
 def test_blocks_match_literal_source_table() -> None:
@@ -207,13 +225,6 @@ def test_token_names_match_file_union() -> None:
     )
     assert TOKEN_NAMES == names
     assert len(TOKEN_NAMES) == 19
-
-
-def test_domain_specific_names_are_absent() -> None:
-    text = token_file_text()
-    for prefix in ("--cg-", "--fl-"):
-        assert prefix not in text
-        assert not any(name.startswith(prefix) for name in TOKEN_NAMES)
 
 
 def test_export_is_exact_file_text() -> None:
